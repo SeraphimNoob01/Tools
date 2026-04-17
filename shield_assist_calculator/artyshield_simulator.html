@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shield Assist Calculator — FAF</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shield_assist_calculator.css">
+
+<!-- Favicon: upscale 11x14 PNG to 32x32 via Canvas -->
+<script>
+(function() {
+  var img = new Image();
+  img.onload = function() {
+    var c = document.createElement('canvas');
+    c.width = 32; c.height = 32;
+    var ctx = c.getContext('2d');
+    ctx.imageSmoothingEnabled = false; /* pixel-perfect, no blur */
+    ctx.drawImage(img, 0, 0, 32, 32);
+    var link = document.createElement('link');
+    link.rel = 'icon';
+    link.type = 'image/png';
+    link.href = c.toDataURL('image/png');
+    document.head.appendChild(link);
+  };
+  img.src = 'assets/favicons/shield_assist_calculator/shield_favicon.png';
+})();
+</script>
+</head>
+<body>
+
+<div class="header">
+  <div class="corner corner-tl"></div>
+  <div class="corner corner-tr"></div>
+  <div class="corner corner-bl"></div>
+  <div class="corner corner-br"></div>
+  <div class="header-inner">
+    <div class="header-eyebrow">Supreme Commander: Forged Alliance Forever</div>
+    <div class="header-title">Shield <span>Assist</span> Calculator</div>
+    <div class="header-sub">T3 &amp; Experimental Artillery &middot; T3 Shields &middot; Engineer Assist Cost</div>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="section-title">Parameters</div>
+  <div class="glass-panel">
+    <div class="controls-grid">
+      <div class="ctrl">
+        <label>Artillery Count</label>
+        <input type="number" id="artyCount" value="1" min="1" max="20" step="1" style="width:80px">
+      </div>
+      <div class="ctrl">
+        <label>Engineer Build Rate (BP)</label>
+        <input type="number" id="engiBR" value="32.5" min="1" step="0.5">
+      </div>
+      <div class="ctrl">
+        <label>Engineer Mass Cost</label>
+        <input type="number" id="engiMass" value="312" min="1" step="1">
+      </div>
+      <div class="pgen-group">
+        <div class="pgen-label" id="pgenLabel">T3 Power Generators &mdash; -10% reload each, max 4</div>
+        <div class="pgen-pips" id="pgenDots">
+          <div class="pip" data-v="0">0</div>
+          <div class="pip" data-v="1">1</div>
+          <div class="pip" data-v="2">2</div>
+          <div class="pip" data-v="3">3</div>
+          <div class="pip" data-v="4">4</div>
+        </div>
+        <div class="pgen-hint" id="pgenSub">No reload bonus active</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">Artillery Unit</div>
+  <div class="glass-panel">
+    <div class="arty-tabs" id="artyTabs"></div>
+    <div class="arty-stat-row" id="artyStatBar"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section-title">Shield Sustain Analysis</div>
+  <div class="glass-panel">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align:left;min-width:160px">Shield</th>
+            <th>HP</th>
+            <th>Regen /s<br><small style="opacity:.5;letter-spacing:0">(native)</small></th>
+            <th>Regen /BP</th>
+            <th>Heal /s<br><small style="opacity:.5;letter-spacing:0">(1 engi)</small></th>
+            <th>Mass /s<br><small style="opacity:.5;letter-spacing:0">(1 engi)</small></th>
+            <th>Engis<br>needed</th>
+            <th>Build<br>mass</th>
+            <th>Total<br>mass /s</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="formula-box" id="formulaBox"></div>
+
+</div>
+
+<script>
+const SHIELDS = [
+  { name:'HSD Pulse',  faction:'UEF',    hp:17000, regenPerS:131, regenPerBP:2.18, massPerBP:4.40, regenDelay:3 },
+  { name:'ED4',        faction:'Cybran', hp:13000, regenPerS:130, regenPerBP:2.17, massPerBP:4.13, regenDelay:3 },
+  { name:'Radiance',   faction:'Aeon',   hp:18000, regenPerS:150, regenPerBP:2.50, massPerBP:5.69, regenDelay:3 },
+  { name:'Athanuhthe', faction:'Sera',   hp:21000, regenPerS:168, regenPerBP:2.80, massPerBP:6.06, regenDelay:3 },
+];
+
+// pgenStep = % reload reduction per PGEN (max 4 PGENs always)
+// T3 arty + Mavor: 10% per PGEN -> max 40%
+// Salvation:        5% per PGEN -> max 20% (full adjacency)
+const ARTYS = [
+  { name:'Duke',      faction:'UEF',    damage:7840,  reload:13.3, note:'T3 Artillery',            pgenStep:10 },
+  { name:'Disruptor', faction:'Cybran', damage:3800,  reload:7.5,  note:'T3 Artillery',            pgenStep:10 },
+  { name:'Emissary',  faction:'Cybran', damage:12000, reload:20.0, note:'T3 Artillery',            pgenStep:10 },
+  { name:'Hovatham',  faction:'Sera',   damage:5800,  reload:10.4, note:'T3 Artillery',            pgenStep:10 },
+  { name:'Mavor',     faction:'UEF',    damage:16000, reload:8.0,  note:'Experimental Artillery',  pgenStep:10 },
+  { name:'Salvation', faction:'Aeon',   damage:7920,  reload:3.1,  note:'XP Rapid-Fire Artillery', pgenStep:5  },
+];
+
+let activeArty = 0;
+let pgens = 0;
+
+document.getElementById('pgenDots').addEventListener('click', function(e) {
+  var dot = e.target.closest('.pip');
+  if (!dot) return;
+  pgens = parseInt(dot.dataset.v);
+  refreshPgenUI();
+  calc();
+});
+
+function refreshPgenUI() {
+  var step = ARTYS[activeArty].pgenStep;
+  document.querySelectorAll('#pgenDots .pip').forEach(function(d) {
+    d.classList.toggle('on', parseInt(d.dataset.v) <= pgens && pgens > 0);
+  });
+  var totalPct = pgens * step;
+  document.getElementById('pgenSub').textContent =
+    pgens === 0 ? 'No reload bonus active' : ('-' + totalPct + '% reload time applied');
+  document.getElementById('pgenLabel').textContent = step === 5
+    ? 'Adjacency Bonus — -5% reload per PGEN, max 4 (max -20%)'
+    : 'T3 Power Generators — -10% reload each, max 4 (max -40%)';
+}
+
+function r(v, d) { d = d === undefined ? 1 : d; return +v.toFixed(d); }
+function fmt(v)  { return Math.round(v).toLocaleString(); }
+
+function calc() {
+  var count    = parseFloat(document.getElementById('artyCount').value) || 1;
+  var engiBR   = parseFloat(document.getElementById('engiBR').value)    || 32.5;
+  var engiMass = parseFloat(document.getElementById('engiMass').value)  || 312;
+  var arty     = ARTYS[activeArty];
+
+  var reloadReduction = pgens * arty.pgenStep / 100;
+  var effectiveReload = arty.reload * (1 - reloadReduction);
+  var totalDPS        = (count * arty.damage) / effectiveReload;
+
+  document.getElementById('artyStatBar').innerHTML =
+    '<span>Damage: <b>' + fmt(arty.damage) + '</b></span>' +
+    '<span>Base Reload: <b>' + arty.reload + 's</b></span>' +
+    '<span>Effective Reload: <b>' + r(effectiveReload, 2) + 's</b></span>' +
+    '<span>DPS x' + count + ': <b>' + r(totalDPS, 1) + '</b></span>' +
+    '<span style="opacity:.5;font-style:italic">' + arty.note + '</span>';
+
+  var rows = '';
+  SHIELDS.forEach(function(sh) {
+    var regenFactor        = Math.max(0, (effectiveReload - sh.regenDelay) / effectiveReload);
+    var effectiveShieldReg = sh.regenPerS * regenFactor;
+    var healPerEngi        = engiBR * sh.regenPerBP;
+    var EMs                = engiBR * sh.regenPerBP / sh.massPerBP;
+    var engisNeeded        = (totalDPS - effectiveShieldReg) / healPerEngi;
+    var buildCost          = engisNeeded * engiMass;
+    var totalCost          = engisNeeded * EMs;
+    var cls = engisNeeded >= 20 ? 'c-warn' : engisNeeded >= 12 ? 'c-caution' : 'c-ok';
+
+    rows += '<tr>' +
+      '<td>' + sh.name + '<span class="faction-tag fac-' + sh.faction + '">' + sh.faction + '</span></td>' +
+      '<td class="num">' + fmt(sh.hp) + '</td>' +
+      '<td class="num">' + sh.regenPerS + '</td>' +
+      '<td class="num">' + sh.regenPerBP + '</td>' +
+      '<td class="num">' + r(healPerEngi, 2) + '</td>' +
+      '<td class="num">' + r(EMs, 2) + '</td>' +
+      '<td class="engis-big ' + cls + '">' + r(engisNeeded, 1) + '</td>' +
+      '<td class="num">' + fmt(buildCost) + '</td>' +
+      '<td class="num ' + cls + '">' + r(totalCost, 2) + '</td>' +
+      '</tr>';
+  });
+  document.getElementById('tableBody').innerHTML = rows;
+
+  var stepNote = arty.pgenStep === 5
+    ? 'Salvation adjacency: -5% per PGEN, max 4 = max -20%'
+    : 'T3 PGEN: -10% per PGEN, max 4 = max -40%';
+
+  document.getElementById('formulaBox').innerHTML =
+    '<strong>Definitions</strong>' +
+    '<code>BP = Engineer BuildPower | Rbp = AssistRegen/BP | RM = AssistRegen/Mass (FAF PR #6937)</code>' +
+    '<strong>1 - Mass cost per engineer per second</strong>' +
+    '<code>EM/s = BP x Rbp / RM</code>' +
+    '<strong>2 - Heal output per engineer</strong>' +
+    '<code>healPerEngi = BP x Rbp</code>' +
+    '<strong>3 - Total DPS from artillery</strong>' +
+    '<code>TotalDPS = (Count x Damage) / (BaseReload x (1 - PGENs x ' + (arty.pgenStep / 100) + '))</code>' +
+    '<code>' + stepNote + '</code>' +
+    '<strong>4 - Engineers needed</strong>' +
+    '<code>engisNeeded = (TotalDPS - sh.regenPerS x max(0, (reload - regenDelay) / reload)) / healPerEngi</code>' +
+    '<strong>5 - Total mass cost per second</strong>' +
+    '<code>TotalMass/s = engisNeeded x EM/s</code>';
+}
+
+function buildTabs() {
+  var c = document.getElementById('artyTabs');
+  c.innerHTML = '';
+  ARTYS.forEach(function(a, i) {
+    var b = document.createElement('button');
+    b.className = 'tab-btn' + (i === activeArty ? ' active' : '');
+    b.textContent = a.name;
+    b.onclick = function() {
+      activeArty = i;
+      pgens = 0;
+      buildTabs();
+      refreshPgenUI();
+      calc();
+    };
+    c.appendChild(b);
+  });
+}
+
+['artyCount','engiBR','engiMass'].forEach(function(id) {
+  document.getElementById(id).addEventListener('input', calc);
+});
+
+buildTabs();
+refreshPgenUI();
+calc();
+</script>
+</body>
+</html>
