@@ -27,7 +27,90 @@
 })();
 </script>
 
+<style>
+/* ── Blueprint fetch status bar ── */
+.bp-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin-bottom: 18px;
+  border: 1px solid transparent;
+  transition: all 0.4s ease;
+}
+.bp-status.loading {
+  background: rgba(255,140,0,0.06);
+  border-color: rgba(255,140,0,0.2);
+  color: rgba(255,140,0,0.7);
+}
+.bp-status.success {
+  background: rgba(80,200,100,0.05);
+  border-color: rgba(80,200,100,0.2);
+  color: rgba(80,200,100,0.75);
+}
+.bp-status.fallback {
+  background: rgba(255,200,0,0.05);
+  border-color: rgba(255,200,0,0.2);
+  color: rgba(255,200,0,0.7);
+}
+.bp-status.error {
+  background: rgba(255,80,80,0.05);
+  border-color: rgba(255,80,80,0.2);
+  color: rgba(255,80,80,0.7);
+}
 
+/* Spinner */
+.bp-spinner {
+  width: 12px; height: 12px;
+  border: 2px solid rgba(255,140,0,0.2);
+  border-top-color: rgba(255,140,0,0.8);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.bp-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.bp-status.success .bp-dot { background: rgba(80,200,100,0.8); box-shadow: 0 0 6px rgba(80,200,100,0.5); }
+.bp-status.fallback .bp-dot { background: rgba(255,200,0,0.8); box-shadow: 0 0 6px rgba(255,200,0,0.5); }
+.bp-status.error   .bp-dot { background: rgba(255,80,80,0.8);  box-shadow: 0 0 6px rgba(255,80,80,0.5); }
+
+.bp-refresh {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: rgba(255,140,0,0.5);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.2s;
+}
+.bp-refresh:hover { color: rgba(255,140,0,0.9); }
+
+/* Source tag on table cells */
+.src-live {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: rgba(80,200,100,0.6);
+  vertical-align: super;
+  margin-left: 3px;
+}
+.src-fallback {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: rgba(255,200,0,0.6);
+  vertical-align: super;
+  margin-left: 3px;
+}
+</style>
 </head>
 <body>
 
@@ -141,9 +224,20 @@ const SHIELD_UNITS = [
   { name:'Athanuhthe', faction:'Sera',   id:'XSB4301', regenDelay:3 },
 ];
 
-// ── Fallback hardcoded values (used when fetch fails) ──────────────
-// Format: { damage, reload (seconds), regenRate, regenAssistMult, maxHealth, buildCostMass, buildTime }
-const FALLBACK_ARTY = {
+// ═══════════════════════════════════════════════════════════════════
+// HARDCODED VALUES
+// RegenAssistMult is NOT in the etfreeman-db — it's a game-engine
+// default applied per shield type. These never change without a patch.
+// buildCostMass/buildTime also kept as fallback for when DB is down.
+// ═══════════════════════════════════════════════════════════════════
+const HARDCODED = {
+  // Shields — only regenAssistMult is truly hardcoded; others are fallback
+  UEB4302: { regenAssistMult:60.09, maxHealth:17000, regenRate:131,  buildCostMass:2520, buildTime:3024 },
+  URB4206: { regenAssistMult:60.0,  maxHealth:13000, regenRate:130,  buildCostMass:2150, buildTime:2580 },
+  URB4207: { regenAssistMult:71.43, maxHealth:20000, regenRate:140,  buildCostMass:4200, buildTime:6720 },
+  UAB4301: { regenAssistMult:60.0,  maxHealth:18000, regenRate:150,  buildCostMass:3150, buildTime:4032 },
+  XSB4301: { regenAssistMult:60.0,  maxHealth:21000, regenRate:168,  buildCostMass:3570, buildTime:4536 },
+  // Artys — fallback only, etfreeman-db is primary
   UEB2302: { damage:7840,  reload:13.3 },
   URB2302: { damage:3800,  reload:7.5  },
   UAB2302: { damage:12000, reload:20.0 },
@@ -152,162 +246,222 @@ const FALLBACK_ARTY = {
   XAB2307: { damage:7920,  reload:3.1  },
 };
 
-const FALLBACK_SHIELD = {
-  // regenPerS, regenAssistMult (=> regenPerBP = regenPerS / regenAssistMult)
-  // massPerBP = (regenPerS * buildTime) / (regenAssistMult * buildCostMass * 0.75)
-  UEB4302: { maxHealth:17000, regenRate:131,  regenAssistMult:60.09, buildCostMass:2520, buildTime:3024 },
-  URB4206: { maxHealth:13000, regenRate:130,  regenAssistMult:60.0,  buildCostMass:2150, buildTime:2580 },
-  URB4207: { maxHealth:20000, regenRate:140,  regenAssistMult:71.43, buildCostMass:4200, buildTime:6720 },
-  UAB4301: { maxHealth:18000, regenRate:150,  regenAssistMult:60.0,  buildCostMass:3150, buildTime:4032 },
-  XSB4301: { maxHealth:21000, regenRate:168,  regenAssistMult:60.0,  buildCostMass:3570, buildTime:4536 },
-};
+// ═══════════════════════════════════════════════════════════════════
+// ETFREEMAN-DB  (primary source — pre-parsed, game-accurate values)
+// https://faforever.github.io/etfreeman-db/data/index.json
+// Structure per unit:
+//   Defense.Health            — unit HP (not shield)
+//   Defense.RegenRate         — unit passive regen
+//   Defense.Shield.ShieldMaxHealth
+//   Defense.Shield.ShieldRegenRate
+//   Defense.Shield.ShieldRegenStartTime
+//   Economy.BuildCostMass / BuildTime
+//   Weapon[]                  — array, pick the real damage weapon
+// ═══════════════════════════════════════════════════════════════════
+const ETFREEMAN_URL = 'https://faforever.github.io/etfreeman-db/data/index.json';
+
+// Extract best arty weapon from DB unit entry (skip Death/dummy weapons)
+function extractArtyWeapon(dbUnit) {
+  if (!dbUnit || !dbUnit.Weapon) return null;
+  // Artillery units have one main weapon — find it by excluding Death/AA/dummy
+  const skipCategories = new Set(['Death', 'Anti Air', 'Anti Navy']);
+  for (const w of dbUnit.Weapon) {
+    if (w.DummyWeapon) continue;
+    if (skipCategories.has(w.WeaponCategory)) continue;
+    if (!w.Damage || w.Damage <= 0) continue;
+    if (!w.RateOfFire) continue;
+    return w;
+  }
+  return null;
+}
+
+// Parse a DB unit entry into our internal format
+function parseDbUnit(dbUnit) {
+  if (!dbUnit) return null;
+  const def = dbUnit.Defense || {};
+  const sh  = def.Shield || {};
+  const eco = dbUnit.Economy || {};
+  return {
+    // Shield fields
+    shieldMaxHealth:    sh.ShieldMaxHealth    ?? null,
+    shieldRegenRate:    sh.ShieldRegenRate    ?? null,
+    shieldRegenStart:   sh.ShieldRegenStartTime ?? null,
+    // Unit fields
+    unitHealth:         def.Health            ?? null,
+    unitRegenRate:      def.RegenRate         ?? null,
+    buildCostMass:      eco.BuildCostMass     ?? null,
+    buildTime:          eco.BuildTime         ?? null,
+    // Weapon (filled separately for arty)
+    _weapon:            extractArtyWeapon(dbUnit),
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════════
-// BLUEPRINT FETCHER
+// BLUEPRINT FETCHER  (secondary source — raw Lua, used as fallback)
 // ═══════════════════════════════════════════════════════════════════
 const BRANCH = 'deploy/faf';
 const RAW_BASE = 'https://raw.githubusercontent.com/FAForever/fa/' + encodeURIComponent(BRANCH) + '/units';
 
-// Try raw.githubusercontent first, then GitHub API with base64 decode as fallback
-async function fetchRawBP(unitId) {
-  const rawUrl = `${RAW_BASE}/${unitId}/${unitId}_unit.bp`;
-  const res = await fetch(rawUrl);
-  if (!res.ok) throw new Error('raw fetch failed: ' + res.status);
-  return await res.text();
-}
-
-async function fetchApiBP(unitId) {
-  const apiUrl = `https://api.github.com/repos/FAForever/fa/contents/units/${unitId}/${unitId}_unit.bp?ref=${encodeURIComponent(BRANCH)}`;
-  const res = await fetch(apiUrl, { headers: { 'Accept': 'application/vnd.github.v3+json' } });
-  if (!res.ok) throw new Error('api fetch failed: ' + res.status);
-  const json = await res.json();
-  // GitHub returns base64 with newlines
-  return atob(json.content.replace(/\n/g, ''));
-}
-
 async function fetchBP(unitId) {
+  const rawUrl = `${RAW_BASE}/${unitId}/${unitId}_unit.bp`;
   try {
-    return await fetchRawBP(unitId);
+    const res = await fetch(rawUrl);
+    if (!res.ok) throw new Error('raw ' + res.status);
+    return await res.text();
   } catch(_) {
-    return await fetchApiBP(unitId);
+    const apiUrl = `https://api.github.com/repos/FAForever/fa/contents/units/${unitId}/${unitId}_unit.bp?ref=${encodeURIComponent(BRANCH)}`;
+    const res = await fetch(apiUrl, { headers: { 'Accept': 'application/vnd.github.v3+json' } });
+    if (!res.ok) throw new Error('api ' + res.status);
+    const json = await res.json();
+    return atob(json.content.replace(/\n/g, ''));
   }
 }
 
-// ── Lua BP parser (extracts numeric fields) ──────────────────────
 function parseLua(lua) {
   const get = (key) => {
-    // match  Key = 123  or  Key = 123.45  (possibly inside nested blocks)
     const re = new RegExp('[\\s,{]' + key + '\\s*=\\s*([\\d.]+)', 'i');
     const m = lua.match(re);
     return m ? parseFloat(m[1]) : null;
   };
-
-  // Weapon block: Damage and RateOfFire are inside a Weapon = { ... } block
   const weaponMatch = lua.match(/Weapon\s*=\s*\{([\s\S]*?)(?=\n\s*[A-Z][a-z]|\n})/);
-  const weaponBlock = weaponMatch ? weaponMatch[1] : lua;
-
-  const getWeapon = (key) => {
+  const wb = weaponMatch ? weaponMatch[1] : lua;
+  const getW = (key) => {
     const re = new RegExp('[\\s,{]' + key + '\\s*=\\s*([\\d.]+)', 'i');
-    const m = weaponBlock.match(re);
+    const m = wb.match(re);
     return m ? parseFloat(m[1]) : null;
   };
-
   return {
-    maxHealth:       get('MaxHealth'),
-    regenRate:       get('RegenRate'),
-    regenAssistMult: get('RegenAssistMult'),
-    buildCostMass:   get('BuildCostMass'),
-    buildTime:       get('BuildTime'),
-    damage:          getWeapon('Damage'),
-    rateOfFire:      getWeapon('RateOfFire'), // reload seconds = 1 / RateOfFire
-    muzzleSalvoSize: getWeapon('MuzzleSalvoSize'),
+    maxHealth: get('MaxHealth'), regenRate: get('RegenRate'),
+    buildCostMass: get('BuildCostMass'), buildTime: get('BuildTime'),
+    damage: getW('Damage'), rateOfFire: getW('RateOfFire'),
+    muzzleSalvoSize: getW('MuzzleSalvoSize'),
   };
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════════
-let ARTYS = [];   // resolved from fetch or fallback
-let SHIELDS = []; // resolved from fetch or fallback
-let dataSource = 'loading'; // 'live' | 'fallback' | 'error'
+let ARTYS = [];
+let SHIELDS = [];
 let activeArty = 0;
 let pgens = 0;
+let RAW_RESULTS = {};  // for debug panel
 
 // ═══════════════════════════════════════════════════════════════════
-// FETCH + RESOLVE ALL BLUEPRINTS
+// LOAD — etfreeman-db first, blueprint fallback per unit if needed
 // ═══════════════════════════════════════════════════════════════════
 async function loadBlueprints() {
-  setStatus('loading', 'Fetching live blueprints from FAForever/fa …');
+  setStatus('loading', 'Fetching unit data from etfreeman-db …');
+  RAW_RESULTS = {};
 
-  const allUnits = [...ARTY_UNITS, ...SHIELD_UNITS];
-  const results = {};
-  let anyLive = false;
-  let anyFailed = false;
+  const allIds = [...ARTY_UNITS, ...SHIELD_UNITS].map(u => u.id);
 
-  await Promise.allSettled(
-    allUnits.map(async (u) => {
-      try {
-        const lua = await fetchBP(u.id);
-        results[u.id] = { parsed: parseLua(lua), live: true };
-        anyLive = true;
-      } catch(e) {
-        results[u.id] = { parsed: null, live: false };
-        anyFailed = true;
-      }    })
-  );
-
-  RAW_RESULTS = results;
-
-  // Build ARTYS array
-  ARTYS = ARTY_UNITS.map(u => {
-    const r = results[u.id];
-    const live = r && r.live && r.parsed;
-    const fb = FALLBACK_ARTY[u.id] || {};
-    let damage, reload;
-
-    if (live) {
-      damage = live.damage ?? fb.damage;
-      // RateOfFire in BP = shots/second, so reload = 1/RateOfFire
-      // Also account for MuzzleSalvoSize (Salvation fires salvo)
-      const salvo = live.muzzleSalvoSize || 1;
-      reload = live.rateOfFire ? 1 / live.rateOfFire : fb.reload;
-      // For Salvation-like rapid fire, damage per shot * salvo = damage per volley
-      if (salvo > 1) damage = (damage || 0) * salvo;
-    } else {
-      damage = fb.damage;
-      reload = fb.reload;
+  // ── Step 1: try etfreeman-db (one fetch, all units) ──────────────
+  let dbMap = {};   // id → parseDbUnit result
+  let dbOk  = false;
+  try {
+    const res = await fetch(ETFREEMAN_URL);
+    if (!res.ok) throw new Error('etfreeman HTTP ' + res.status);
+    const json = await res.json();
+    const lookup = {};
+    for (const u of json.units) lookup[u.Id] = u;
+    for (const id of allIds) {
+      if (lookup[id]) {
+        dbMap[id] = parseDbUnit(lookup[id]);
+        RAW_RESULTS[id] = { db: dbMap[id], dbRaw: lookup[id], bpParsed: null };
+      } else {
+        RAW_RESULTS[id] = { db: null, dbRaw: null, bpParsed: null };
+      }
     }
+    dbOk = true;
+  } catch(e) {
+    for (const id of allIds) RAW_RESULTS[id] = { db: null, dbRaw: null, bpParsed: null };
+    console.warn('etfreeman-db fetch failed:', e.message);
+  }
 
-    return {
-      ...u,
-      damage,
-      reload,
-      _live: !!(live && live.damage && live.rateOfFire),
-    };
+  // ── Step 2: blueprint fallback for units still missing key fields ─
+  // For shields: need shieldRegenRate + buildCostMass + buildTime
+  // For artys: need damage + rateOfFire
+  const needsBP = allIds.filter(id => {
+    const db = dbMap[id];
+    const isShield = SHIELD_UNITS.some(u => u.id === id);
+    if (isShield) return !db || db.shieldRegenRate == null || db.buildCostMass == null;
+    else          return !db || db._weapon == null;
   });
 
-  // Build SHIELDS array
-  SHIELDS = SHIELD_UNITS.map(u => {
-    const r = results[u.id];
-    const live = r && r.live && r.parsed;
-    const fb = FALLBACK_SHIELD[u.id] || {};
+  if (needsBP.length > 0) {
+    await Promise.allSettled(needsBP.map(async id => {
+      try {
+        const lua = await fetchBP(id);
+        RAW_RESULTS[id].bpParsed = parseLua(lua);
+      } catch(e) {
+        console.warn('BP fallback failed for', id, e.message);
+      }
+    }));
+  }
 
-    let maxHealth, regenRate, regenAssistMult, buildCostMass, buildTime;
+  // ── Step 3: resolve ARTYS ─────────────────────────────────────────
+  ARTYS = ARTY_UNITS.map(u => {
+    const db  = dbMap[u.id];
+    const bp  = RAW_RESULTS[u.id].bpParsed;
+    const hc  = HARDCODED[u.id] || {};
+    const w   = db?._weapon;
 
-    if (live) {
-      maxHealth       = live.maxHealth       ?? fb.maxHealth;
-      regenRate       = live.regenRate       ?? fb.regenRate;
-      regenAssistMult = live.regenAssistMult ?? fb.regenAssistMult;
-      buildCostMass   = live.buildCostMass   ?? fb.buildCostMass;
-      buildTime       = live.buildTime       ?? fb.buildTime;
+    let damage, reload, salvo, _src;
+
+    if (w) {
+      // etfreeman-db — game-accurate DPS simulation
+      damage = w.Damage;
+      salvo  = w.MuzzleSalvoSize || 1;
+      reload = w.RateOfFire ? 1 / w.RateOfFire : hc.reload;
+      if (salvo > 1) damage = damage * salvo;
+      _src = 'etfreeman';
+    } else if (bp && bp.damage && bp.rateOfFire) {
+      // Blueprint Lua fallback
+      damage = bp.damage;
+      salvo  = bp.muzzleSalvoSize || 1;
+      reload = 1 / bp.rateOfFire;
+      if (salvo > 1) damage = damage * salvo;
+      _src = 'blueprint';
     } else {
-      ({ maxHealth, regenRate, regenAssistMult, buildCostMass, buildTime } = fb);
+      // Hardcoded last resort
+      damage = hc.damage;
+      reload = hc.reload;
+      _src = 'hardcoded';
     }
 
-    // Derived values using FAF PR #6937 formulas:
-    // regen/bp   = regenRate / regenAssistMult
-    // regen/mass = (regenRate * buildTime) / (regenAssistMult * buildCostMass * 0.75)
-    const regenPerBP  = regenRate / regenAssistMult;
+    return { ...u, damage, reload, _src };
+  });
+
+  // ── Step 4: resolve SHIELDS ───────────────────────────────────────
+  SHIELDS = SHIELD_UNITS.map(u => {
+    const db  = dbMap[u.id];
+    const bp  = RAW_RESULTS[u.id].bpParsed;
+    const hc  = HARDCODED[u.id] || {};
+
+    // maxHealth: prefer Shield.ShieldMaxHealth from DB, then BP, then hardcode
+    const maxHealth = db?.shieldMaxHealth ?? bp?.maxHealth ?? hc.maxHealth;
+
+    // regenRate: prefer Shield.ShieldRegenRate from DB (game-accurate), then fallback
+    const regenRate = db?.shieldRegenRate ?? bp?.regenRate ?? hc.regenRate;
+
+    // buildCostMass / buildTime: DB Economy fields
+    const buildCostMass = db?.buildCostMass ?? bp?.buildCostMass ?? hc.buildCostMass;
+    const buildTime     = db?.buildTime     ?? bp?.buildTime     ?? hc.buildTime;
+
+    // regenAssistMult: ONLY from hardcoded (not in DB or BP in a reliable way)
+    const regenAssistMult = hc.regenAssistMult;
+
+    // Track per-field sources for debug
+    RAW_RESULTS[u.id]._resolved = {
+      maxHealth:       { val: maxHealth,       src: db?.shieldMaxHealth != null ? 'etfreeman' : bp?.maxHealth != null ? 'blueprint' : 'hardcoded' },
+      regenRate:       { val: regenRate,       src: db?.shieldRegenRate != null ? 'etfreeman' : bp?.regenRate != null ? 'blueprint' : 'hardcoded' },
+      buildCostMass:   { val: buildCostMass,   src: db?.buildCostMass   != null ? 'etfreeman' : bp?.buildCostMass != null ? 'blueprint' : 'hardcoded' },
+      buildTime:       { val: buildTime,       src: db?.buildTime       != null ? 'etfreeman' : bp?.buildTime != null ? 'blueprint' : 'hardcoded' },
+      regenAssistMult: { val: regenAssistMult, src: 'hardcoded' },
+    };
+
+    const regenPerBP   = regenRate / regenAssistMult;
     const regenPerMass = (regenRate * buildTime) / (regenAssistMult * buildCostMass * 0.75);
 
     return {
@@ -315,21 +469,25 @@ async function loadBlueprints() {
       hp: maxHealth,
       regenPerS: regenRate,
       regenPerBP,
-      massPerBP: regenPerBP / regenPerMass, // = buildCostMass * 0.75 / buildTime
-      _live: !!(live && live.regenRate && live.regenAssistMult),
+      massPerBP: regenPerBP / regenPerMass,
     };
   });
 
-  // Status
-  if (anyLive && !anyFailed) {
-    dataSource = 'live';
-    setStatus('success', 'Live blueprints loaded from FAForever/fa (' + BRANCH + ')');
-  } else if (anyLive && anyFailed) {
-    dataSource = 'partial';
-    setStatus('fallback', 'Partial fetch — some values use fallback data. <span class="bp-refresh" onclick="retryLoad()">Retry</span>');
+  // ── Status ────────────────────────────────────────────────────────
+  if (dbOk) {
+    const allDbHit = allIds.every(id => dbMap[id]);
+    setStatus('success',
+      'Unit data from etfreeman-db' +
+      (needsBP.length ? ' · ' + needsBP.length + ' unit(s) used blueprint fallback' : '') +
+      ' · RegenAssistMult hardcoded'
+    );
   } else {
-    dataSource = 'fallback';
-    setStatus('fallback', 'GitHub unreachable — showing cached fallback values. <span class="bp-refresh" onclick="retryLoad()">Retry</span>');
+    const bpCount = allIds.filter(id => RAW_RESULTS[id].bpParsed).length;
+    if (bpCount > 0) {
+      setStatus('fallback', 'etfreeman-db unreachable — using blueprint fallback + hardcoded values. <span class="bp-refresh" onclick="retryLoad()">Retry</span>');
+    } else {
+      setStatus('fallback', 'All sources unreachable — showing hardcoded values only. <span class="bp-refresh" onclick="retryLoad()">Retry</span>');
+    }
   }
 
   buildTabs();
@@ -431,8 +589,8 @@ function calc() {
     : 'T3 PGEN: -10% per PGEN, max 4 = max -40%';
 
   document.getElementById('formulaBox').innerHTML =
-    '<strong>Blueprint Source</strong>' +
-    '<code>FAForever/fa · branch: ' + BRANCH + ' · fetched at page load · <span class="bp-refresh" onclick="retryLoad()" style="cursor:pointer">Refresh</span></code>' +
+    '<strong>Data Sources</strong>' +
+    '<code>Primary: etfreeman-db (faforever.github.io/etfreeman-db/data/index.json) — game-accurate, simulated values · Fallback: FAForever/fa blueprint Lua (branch: ' + BRANCH + ') · RegenAssistMult: hardcoded constant · <span class="bp-refresh" onclick="retryLoad()" style="cursor:pointer">Refresh</span></code>' +
     '<strong>Definitions</strong>' +
     '<code>BP = Engineer BuildPower | Rbp = RegenRate / RegenAssistMult | RM = (RegenRate × BuildTime) / (RegenAssistMult × BuildCostMass × 0.75)</code>' +
     '<strong>1 - Regen per BP (assist efficiency)</strong>' +
@@ -476,56 +634,75 @@ function toggleDebug() {
   document.getElementById('debugPanel').classList.toggle('open');
 }
 
-// Raw blueprint data store for debug panel
-let RAW_RESULTS = {};
-
 function buildDebugPanel() {
-  const allUnits = [...ARTY_UNITS, ...SHIELD_UNITS];
-  const fb = { ...FALLBACK_ARTY, ...FALLBACK_SHIELD };
-  let html = '';
+  const SRC_LABEL = {
+    'etfreeman':  '● etfreeman-db (game-accurate)',
+    'blueprint':  '◑ blueprint Lua (raw parse)',
+    'hardcoded':  '◐ hardcoded constant',
+    'missing':    '✕ not found anywhere',
+  };
+  const SRC_CLS = { 'etfreeman':'live', 'blueprint':'live', 'hardcoded':'fallback', 'missing':'missing' };
 
-  allUnits.forEach(function(u) {
-    const r = RAW_RESULTS[u.id];
-    const live = r && r.live && r.parsed;
-    const fallback = fb[u.id] || {};
+  function field(key, val, src) {
+    const label = SRC_LABEL[src] || SRC_LABEL['missing'];
+    const cls   = SRC_CLS[src]   || 'missing';
+    return '<div class="debug-field">' +
+      '<div class="debug-field-key">' + key + '</div>' +
+      '<div class="debug-field-val">' + (val != null ? val : '—') + '</div>' +
+      '<div class="debug-field-src ' + cls + '">' + label + '</div>' +
+      '</div>';
+  }
 
-    // Determine which fields are relevant for this unit type
-    const isArty = !!FALLBACK_ARTY[u.id];
-    const fields = isArty
-      ? ['damage', 'rateOfFire', 'muzzleSalvoSize']
-      : ['maxHealth', 'regenRate', 'regenAssistMult', 'buildCostMass', 'buildTime'];
+  var html = '';
 
-    // Badge
-    const allLive = live && fields.every(f => live[f] != null);
-    const noneLive = !live;
-    const badgeCls = allLive ? 'debug-badge-live' : noneLive ? 'debug-badge-fallback' : 'debug-badge-mixed';
-    const badgeTxt = allLive ? 'LIVE' : noneLive ? 'FALLBACK' : 'MIXED';
+  ARTY_UNITS.forEach(function(u) {
+    var r        = RAW_RESULTS[u.id] || {};
+    var db       = r.db;
+    var bp       = r.bpParsed;
+    var hc       = HARDCODED[u.id] || {};
+    var w        = db && db._weapon;
+    var resolved = ARTYS.find(function(a) { return a.id === u.id; });
+    var src      = (resolved && resolved._src) || 'hardcoded';
 
-    html += '<div class="debug-unit">';
-    html += '<div class="debug-unit-header">';
-    html += u.name + ' <span class="debug-unit-id">' + u.id + '</span>';
-    html += '<span class="' + badgeCls + '">' + badgeTxt + '</span>';
-    html += '</div>';
-    html += '<div class="debug-fields">';
+    var salvo  = (w && w.MuzzleSalvoSize) || (bp && bp.muzzleSalvoSize) || 1;
+    var dmgRaw = (w && w.Damage) != null ? w.Damage : (bp && bp.damage) != null ? bp.damage : hc.damage;
+    var rof    = (w && w.RateOfFire) || (bp && bp.rateOfFire) || (hc.reload ? 1/hc.reload : null);
+    var reloadS = rof ? (1/rof).toFixed(3) + 's' : '—';
 
-    fields.forEach(function(f) {
-      const liveVal = live ? live[f] : null;
-      const fbVal   = fallback[f];
-      const usedVal = liveVal != null ? liveVal : fbVal;
-      const src     = liveVal != null ? 'live' : (fbVal != null ? 'fallback' : 'missing');
-      const srcLabel = liveVal != null ? '● github/fa live' : (fbVal != null ? '◐ hardcoded fallback' : '✕ not found');
+    var badgeCls = src === 'etfreeman' ? 'debug-badge-live' : src === 'blueprint' ? 'debug-badge-mixed' : 'debug-badge-fallback';
+    var badgeTxt = src === 'etfreeman' ? 'ETFREEMAN-DB'     : src === 'blueprint' ? 'BLUEPRINT'         : 'HARDCODED';
 
-      // Special label for rateOfFire: show as reload seconds too
-      let displayVal = usedVal != null ? usedVal : '—';
-      if (f === 'rateOfFire' && usedVal != null) {
-        displayVal = usedVal + ' → ' + (1 / usedVal).toFixed(3) + 's reload';
-      }
+    html += '<div class="debug-unit">' +
+      '<div class="debug-unit-header">' + u.name +
+        ' <span class="debug-unit-id">' + u.id + '</span>' +
+        '<span class="' + badgeCls + '">' + badgeTxt + '</span>' +
+      '</div>' +
+      '<div class="debug-fields">' +
+        field('Damage (raw/shot)', dmgRaw, src) +
+        field('MuzzleSalvoSize', salvo, src) +
+        field('Damage × salvo', salvo > 1 ? dmgRaw * salvo : dmgRaw, src) +
+        field('RateOfFire → reload', rof ? rof.toFixed(6) + ' → ' + reloadS : '—', src) +
+      '</div></div>';
+  });
 
-      html += '<div class="debug-field">';
-      html += '<div class="debug-field-key">' + f + '</div>';
-      html += '<div class="debug-field-val">' + displayVal + '</div>';
-      html += '<div class="debug-field-src ' + src + '">' + srcLabel + '</div>';
-      html += '</div>';
+  SHIELD_UNITS.forEach(function(u) {
+    var r   = RAW_RESULTS[u.id] || {};
+    var res = r._resolved || {};
+    var srcs = Object.values(res).map(function(f) { return f && f.src; });
+    var allEtf = srcs.every(function(s) { return s === 'etfreeman'; });
+    var anyEtf = srcs.some(function(s)  { return s === 'etfreeman'; });
+    var badgeCls = allEtf ? 'debug-badge-live' : anyEtf ? 'debug-badge-mixed' : 'debug-badge-fallback';
+    var badgeTxt = allEtf ? 'ETFREEMAN-DB'     : anyEtf ? 'MIXED'             : 'FALLBACK';
+
+    html += '<div class="debug-unit">' +
+      '<div class="debug-unit-header">' + u.name +
+        ' <span class="debug-unit-id">' + u.id + '</span>' +
+        '<span class="' + badgeCls + '">' + badgeTxt + '</span>' +
+      '</div><div class="debug-fields">';
+
+    Object.keys(res).forEach(function(k) {
+      var f = res[k];
+      html += field(k, f && f.val, f && f.src);
     });
 
     html += '</div></div>';
