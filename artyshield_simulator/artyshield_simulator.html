@@ -732,6 +732,16 @@ function buildDebugPanel() {
       html += field(k, f && f.val, f && f.src);
     });
 
+    // Raw DB dump for diagnosis
+    if (r.dbRaw) {
+      var sh = (r.dbRaw.Defense || {}).Shield || {};
+      html += field('[raw] Defense.Shield keys', Object.keys(sh).join(', ') || '(empty)', 'etfreeman');
+      html += field('[raw] Defense.Shield.ShieldMaxHealth', sh.ShieldMaxHealth != null ? sh.ShieldMaxHealth : '— missing', sh.ShieldMaxHealth != null ? 'etfreeman' : 'missing');
+      html += field('[raw] Defense.Shield.ShieldRegenRate', sh.ShieldRegenRate != null ? sh.ShieldRegenRate : '— missing', sh.ShieldRegenRate != null ? 'etfreeman' : 'missing');
+    } else {
+      html += field('[raw] etfreeman-db entry', '— not found in DB', 'missing');
+    }
+
     html += '</div></div>';
   });
 
