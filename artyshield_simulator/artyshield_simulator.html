@@ -217,7 +217,7 @@ const ARTY_UNITS = [
 ];
 
 const SHIELD_UNITS = [
-  { name:'HSD Pulse',  faction:'UEF',    id:'UEB4302', regenDelay:3 },
+  { name:'HSD Pulse',  faction:'UEF',    id:'UEB4301', regenDelay:3 },
   { name:'ED4',        faction:'Cybran', id:'URB4206', regenDelay:3 },
   { name:'ED5',        faction:'Cybran', id:'URB4207', regenDelay:3 },
   { name:'Radiance',   faction:'Aeon',   id:'UAB4301', regenDelay:3 },
@@ -232,7 +232,7 @@ const SHIELD_UNITS = [
 // ═══════════════════════════════════════════════════════════════════
 const HARDCODED = {
   // Shields — regenAssistMult: live from unit.bp where available; UEF (UEB4302) has no entry in unit.bp → hardcoded 60
-  UEB4302: { regenAssistMult:60,    maxHealth:17000, regenRate:131,  buildCostMass:2520, buildTime:3024 },
+  UEB4301: { regenAssistMult:60,    maxHealth:17000, regenRate:131,  buildCostMass:2520, buildTime:3024 },
   URB4206: { regenAssistMult:60.0,  maxHealth:13000, regenRate:130,  buildCostMass:2150, buildTime:2580 },
   URB4207: { regenAssistMult:60.0,  maxHealth:20000, regenRate:140,  buildCostMass:4200, buildTime:6720 },
   UAB4301: { regenAssistMult:60.0,  maxHealth:18000, regenRate:150,  buildCostMass:3150, buildTime:4032 },
@@ -396,7 +396,8 @@ async function loadBlueprints() {
       }
     }
     // Units whose ID key is missing in etfreeman-db — fall back to UnitName match
-    const UNITNAME_LOOKUP = { 'UEB4302': 'HSD Pulse' };
+    // (currently none, kept for extensibility)
+    const UNITNAME_LOOKUP = {};
     for (const id of allIds) {
       const entry = lookup[id.toUpperCase()]
         || (UNITNAME_LOOKUP[id] ? namelookup[UNITNAME_LOOKUP[id]] : null);
