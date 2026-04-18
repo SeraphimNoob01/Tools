@@ -234,7 +234,7 @@ const HARDCODED = {
   // Shields — only regenAssistMult is truly hardcoded; others are fallback
   UEB4302: { regenAssistMult:60.09, maxHealth:17000, regenRate:131,  buildCostMass:2520, buildTime:3024 },
   URB4206: { regenAssistMult:60.0,  maxHealth:13000, regenRate:130,  buildCostMass:2150, buildTime:2580 },
-  URB4207: { regenAssistMult:71.43, maxHealth:20000, regenRate:140,  buildCostMass:4200, buildTime:6720 },
+  URB4207: { regenAssistMult:60.0,  maxHealth:20000, regenRate:140,  buildCostMass:4200, buildTime:6720 },
   UAB4301: { regenAssistMult:60.0,  maxHealth:18000, regenRate:150,  buildCostMass:3150, buildTime:4032 },
   XSB4301: { regenAssistMult:60.0,  maxHealth:21000, regenRate:168,  buildCostMass:3570, buildTime:4536 },
   // Artys — fallback only, etfreeman-db is primary
@@ -243,7 +243,7 @@ const HARDCODED = {
   UAB2302: { damage:12000, reload:20.0 },
   XSB2302: { damage:5800,  reload:10.4 },
   UEB2401: { damage:16000, reload:8.0  },
-  XAB2307: { damage:7920,  reload:3.1  },
+  XAB2307: { damage:7920,  reload:3.1, damageOverride:7920 },  // 36 child fragments × 220 dmg; split not modeled in DB
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -261,16 +261,29 @@ const HARDCODED = {
 const ETFREEMAN_URL = 'https://faforever.github.io/etfreeman-db/data/index.json';
 
 // Extract best arty weapon from DB unit entry (skip Death/dummy weapons)
+// Compute total damage for a weapon entry including DoT
+function weaponTotalDamage(w) {
+  // InitialDamage fires once per shot; Damage fires DoTPulses times over DoTTime
+  const initial = w.InitialDamage || 0;
+  const pulses  = (w.DoTPulses > 0) ? w.DoTPulses : 1;
+  const dmgPerPulse = w.Damage || 0;
+  // If DoTPulses is set, total = initial + damage*pulses; else just damage
+  const total = (w.DoTPulses > 0)
+    ? initial + dmgPerPulse * pulses
+    : dmgPerPulse + initial;
+  return total * (w.MuzzleSalvoSize || 1);
+}
+
 function extractArtyWeapon(dbUnit) {
   if (!dbUnit || !dbUnit.Weapon) return null;
-  // Artillery units have one main weapon — find it by excluding Death/AA/dummy
   const skipCategories = new Set(['Death', 'Anti Air', 'Anti Navy']);
   for (const w of dbUnit.Weapon) {
     if (w.DummyWeapon) continue;
     if (skipCategories.has(w.WeaponCategory)) continue;
-    if (!w.Damage || w.Damage <= 0) continue;
     if (!w.RateOfFire) continue;
-    return w;
+    const total = weaponTotalDamage(w);
+    if (total <= 0) continue;
+    return { ...w, _totalDamage: total };
   }
   return null;
 }
@@ -407,24 +420,24 @@ async function loadBlueprints() {
     const hc  = HARDCODED[u.id] || {};
     const w   = db?._weapon;
 
-    let damage, reload, salvo, _src;
+    let damage, reload, _src;
 
-    if (w) {
-      // etfreeman-db — game-accurate DPS simulation
-      damage = w.Damage;
-      salvo  = w.MuzzleSalvoSize || 1;
-      reload = w.RateOfFire ? 1 / w.RateOfFire : hc.reload;
-      if (salvo > 1) damage = damage * salvo;
+    // damageOverride: unit has fragment/child-projectile splitting not modeled in DB
+    if (hc.damageOverride != null) {
+      damage = hc.damageOverride;
+      // Reload from DB weapon if available, else hardcoded
+      reload = w?.RateOfFire ? 1 / w.RateOfFire : hc.reload;
+      _src = w ? 'etfreeman+override' : 'hardcoded';
+    } else if (w) {
+      // etfreeman-db: use pre-computed _totalDamage (includes InitialDamage + DoT pulses)
+      damage = w._totalDamage;
+      reload = 1 / w.RateOfFire;
       _src = 'etfreeman';
     } else if (bp && bp.damage && bp.rateOfFire) {
-      // Blueprint Lua fallback
       damage = bp.damage;
-      salvo  = bp.muzzleSalvoSize || 1;
       reload = 1 / bp.rateOfFire;
-      if (salvo > 1) damage = damage * salvo;
       _src = 'blueprint';
     } else {
-      // Hardcoded last resort
       damage = hc.damage;
       reload = hc.reload;
       _src = 'hardcoded';
@@ -439,13 +452,14 @@ async function loadBlueprints() {
     const bp  = RAW_RESULTS[u.id].bpParsed;
     const hc  = HARDCODED[u.id] || {};
 
-    // maxHealth: prefer Shield.ShieldMaxHealth from DB, then BP, then hardcode
-    const maxHealth = db?.shieldMaxHealth ?? bp?.maxHealth ?? hc.maxHealth;
+    // maxHealth: ONLY DB Shield.ShieldMaxHealth or hardcode — NEVER bp.maxHealth
+    // (bp.maxHealth = unit structural HP e.g. 3800 for UEB4302, not the shield pool)
+    const maxHealth = db?.shieldMaxHealth ?? hc.maxHealth;
 
-    // regenRate: prefer Shield.ShieldRegenRate from DB (game-accurate), then fallback
-    const regenRate = db?.shieldRegenRate ?? bp?.regenRate ?? hc.regenRate;
+    // regenRate: DB Shield.ShieldRegenRate is reliable; bp.regenRate is unreliable for shields
+    const regenRate = db?.shieldRegenRate ?? hc.regenRate;
 
-    // buildCostMass / buildTime: DB Economy fields
+    // buildCostMass / buildTime: DB Economy is reliable; BP is acceptable fallback here
     const buildCostMass = db?.buildCostMass ?? bp?.buildCostMass ?? hc.buildCostMass;
     const buildTime     = db?.buildTime     ?? bp?.buildTime     ?? hc.buildTime;
 
@@ -454,8 +468,8 @@ async function loadBlueprints() {
 
     // Track per-field sources for debug
     RAW_RESULTS[u.id]._resolved = {
-      maxHealth:       { val: maxHealth,       src: db?.shieldMaxHealth != null ? 'etfreeman' : bp?.maxHealth != null ? 'blueprint' : 'hardcoded' },
-      regenRate:       { val: regenRate,       src: db?.shieldRegenRate != null ? 'etfreeman' : bp?.regenRate != null ? 'blueprint' : 'hardcoded' },
+      maxHealth:       { val: maxHealth,       src: db?.shieldMaxHealth != null ? 'etfreeman' : 'hardcoded' },
+      regenRate:       { val: regenRate,       src: db?.shieldRegenRate != null ? 'etfreeman' : 'hardcoded' },
       buildCostMass:   { val: buildCostMass,   src: db?.buildCostMass   != null ? 'etfreeman' : bp?.buildCostMass != null ? 'blueprint' : 'hardcoded' },
       buildTime:       { val: buildTime,       src: db?.buildTime       != null ? 'etfreeman' : bp?.buildTime != null ? 'blueprint' : 'hardcoded' },
       regenAssistMult: { val: regenAssistMult, src: 'hardcoded' },
@@ -664,13 +678,15 @@ function buildDebugPanel() {
     var resolved = ARTYS.find(function(a) { return a.id === u.id; });
     var src      = (resolved && resolved._src) || 'hardcoded';
 
-    var salvo  = (w && w.MuzzleSalvoSize) || (bp && bp.muzzleSalvoSize) || 1;
-    var dmgRaw = (w && w.Damage) != null ? w.Damage : (bp && bp.damage) != null ? bp.damage : hc.damage;
-    var rof    = (w && w.RateOfFire) || (bp && bp.rateOfFire) || (hc.reload ? 1/hc.reload : null);
-    var reloadS = rof ? (1/rof).toFixed(3) + 's' : '—';
+    var dmgRaw   = (w && w.Damage) != null ? w.Damage : (bp && bp.damage) != null ? bp.damage : hc.damage;
+    var dmgTotal = (w && w._totalDamage) != null ? w._totalDamage : dmgRaw;
+    var rof      = (w && w.RateOfFire) || (bp && bp.rateOfFire) || (hc.reload ? 1/hc.reload : null);
+    var reloadS  = rof ? (1/rof).toFixed(3) + 's' : '—';
+    var override = hc.damageOverride != null;
+    var dotInfo  = (w && w.DoTPulses > 0) ? (w.InitialDamage||0) + ' initial + ' + w.Damage + '×' + w.DoTPulses + ' DoT' : null;
 
-    var badgeCls = src === 'etfreeman' ? 'debug-badge-live' : src === 'blueprint' ? 'debug-badge-mixed' : 'debug-badge-fallback';
-    var badgeTxt = src === 'etfreeman' ? 'ETFREEMAN-DB'     : src === 'blueprint' ? 'BLUEPRINT'         : 'HARDCODED';
+    var badgeCls = src === 'etfreeman' || src === 'etfreeman+override' ? 'debug-badge-live' : src === 'blueprint' ? 'debug-badge-mixed' : 'debug-badge-fallback';
+    var badgeTxt = src === 'etfreeman' ? 'ETFREEMAN-DB' : src === 'etfreeman+override' ? 'DB+OVERRIDE' : src === 'blueprint' ? 'BLUEPRINT' : 'HARDCODED';
 
     html += '<div class="debug-unit">' +
       '<div class="debug-unit-header">' + u.name +
@@ -679,8 +695,8 @@ function buildDebugPanel() {
       '</div>' +
       '<div class="debug-fields">' +
         field('Damage (raw/shot)', dmgRaw, src) +
-        field('MuzzleSalvoSize', salvo, src) +
-        field('Damage × salvo', salvo > 1 ? dmgRaw * salvo : dmgRaw, src) +
+        (dotInfo ? field('DoT breakdown', dotInfo, src) : '') +
+        field('Total damage used', override ? hc.damageOverride + ' (override)' : dmgTotal, override ? 'hardcoded' : src) +
         field('RateOfFire → reload', rof ? rof.toFixed(6) + ' → ' + reloadS : '—', src) +
       '</div></div>';
   });
