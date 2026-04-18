@@ -378,29 +378,19 @@ async function loadBlueprints() {
     if (!res.ok) throw new Error('etfreeman HTTP ' + res.status);
     const json = await res.json();
     const lookup = {};
-    const namelookup = {}; // UnitName → entry
-    // etfreeman-db may be { units: [...] } with id/Id field, OR a plain object keyed by unit ID
+    // etfreeman-db index.json: plain object keyed by unit ID e.g. { "UEB4302": {...}, ... }
+    // May also be { units: [...] } with Id field
     if (Array.isArray(json.units)) {
       for (const u of json.units) {
         const key = u.Id || u.id || u.ID;
         if (key) lookup[key.toUpperCase()] = u;
-        if (u.General?.UnitName) namelookup[u.General.UnitName] = u;
       }
     } else {
-      // Plain object: { "UEB4302": {...}, ... }
       const root = json.units || json;
-      for (const key of Object.keys(root)) {
-        lookup[key.toUpperCase()] = root[key];
-        const uname = root[key]?.General?.UnitName;
-        if (uname) namelookup[uname] = root[key];
-      }
+      for (const key of Object.keys(root)) lookup[key.toUpperCase()] = root[key];
     }
-    // Units whose ID key is missing in etfreeman-db — fall back to UnitName match
-    // (currently none, kept for extensibility)
-    const UNITNAME_LOOKUP = {};
     for (const id of allIds) {
-      const entry = lookup[id.toUpperCase()]
-        || (UNITNAME_LOOKUP[id] ? namelookup[UNITNAME_LOOKUP[id]] : null);
+      const entry = lookup[id.toUpperCase()];
       if (entry) {
         dbMap[id] = parseDbUnit(entry);
         RAW_RESULTS[id] = { db: dbMap[id], dbRaw: entry, bpParsed: null };
@@ -753,15 +743,6 @@ function buildDebugPanel() {
       html += field(k, f && f.val, f && f.src);
     });
 
-    // Raw DB dump for diagnosis
-    if (r.dbRaw) {
-      var sh = (r.dbRaw.Defense || {}).Shield || {};
-      html += field('[raw] Defense.Shield keys', Object.keys(sh).join(', ') || '(empty)', 'etfreeman');
-      html += field('[raw] Defense.Shield.ShieldMaxHealth', sh.ShieldMaxHealth != null ? sh.ShieldMaxHealth : '— missing', sh.ShieldMaxHealth != null ? 'etfreeman' : 'missing');
-      html += field('[raw] Defense.Shield.ShieldRegenRate', sh.ShieldRegenRate != null ? sh.ShieldRegenRate : '— missing', sh.ShieldRegenRate != null ? 'etfreeman' : 'missing');
-    } else {
-      html += field('[raw] etfreeman-db entry', '— not found in DB', 'missing');
-    }
 
     html += '</div></div>';
   });
