@@ -378,11 +378,31 @@ async function loadBlueprints() {
     if (!res.ok) throw new Error('etfreeman HTTP ' + res.status);
     const json = await res.json();
     const lookup = {};
-    for (const u of json.units) lookup[u.Id] = u;
+    const namelookup = {}; // UnitName → entry
+    // etfreeman-db may be { units: [...] } with id/Id field, OR a plain object keyed by unit ID
+    if (Array.isArray(json.units)) {
+      for (const u of json.units) {
+        const key = u.Id || u.id || u.ID;
+        if (key) lookup[key.toUpperCase()] = u;
+        if (u.General?.UnitName) namelookup[u.General.UnitName] = u;
+      }
+    } else {
+      // Plain object: { "UEB4302": {...}, ... }
+      const root = json.units || json;
+      for (const key of Object.keys(root)) {
+        lookup[key.toUpperCase()] = root[key];
+        const uname = root[key]?.General?.UnitName;
+        if (uname) namelookup[uname] = root[key];
+      }
+    }
+    // Units whose ID key is missing in etfreeman-db — fall back to UnitName match
+    const UNITNAME_LOOKUP = { 'UEB4302': 'HSD Pulse' };
     for (const id of allIds) {
-      if (lookup[id]) {
-        dbMap[id] = parseDbUnit(lookup[id]);
-        RAW_RESULTS[id] = { db: dbMap[id], dbRaw: lookup[id], bpParsed: null };
+      const entry = lookup[id.toUpperCase()]
+        || (UNITNAME_LOOKUP[id] ? namelookup[UNITNAME_LOOKUP[id]] : null);
+      if (entry) {
+        dbMap[id] = parseDbUnit(entry);
+        RAW_RESULTS[id] = { db: dbMap[id], dbRaw: entry, bpParsed: null };
       } else {
         RAW_RESULTS[id] = { db: null, dbRaw: null, bpParsed: null };
       }
