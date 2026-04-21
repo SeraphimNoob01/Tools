@@ -29,6 +29,13 @@
 
 <style>
 /* ── Blueprint fetch status bar ── */
+body, .main, .glass-panel, .ctrl label, .pgen-label, .pgen-hint,
+.section-title, .arty-stat-row, table, th, td, .formula-box,
+.debug-panel, .debug-toggle, .debug-field-key, .debug-field-val {
+  color: #ffffff !important;
+}
+.pgen-hint { color: rgba(255,255,255,0.7) !important; }
+th { color: rgba(255,255,255,0.85) !important; }
 .bp-status {
   display: flex;
   align-items: center;
@@ -156,6 +163,16 @@
           <div class="pip" data-v="3">3</div>
           <div class="pip" data-v="4">4</div>
         </div>
+        <div id="t1pgenRow" style="display:none;margin-top:10px">
+          <div class="pgen-label" id="t1pgenLabel">T1 Power Generators &mdash; -0.5% reload each, max 4</div>
+          <div class="pgen-pips" id="t1pgenDots">
+            <div class="pip t1pip" data-v="0">0</div>
+            <div class="pip t1pip" data-v="1">1</div>
+            <div class="pip t1pip" data-v="2">2</div>
+            <div class="pip t1pip" data-v="3">3</div>
+            <div class="pip t1pip" data-v="4">4</div>
+          </div>
+        </div>
         <div class="pgen-hint" id="pgenSub">No reload bonus active</div>
       </div>
     </div>
@@ -213,7 +230,7 @@ const ARTY_UNITS = [
   { name:'Emissary',  faction:'Aeon',   id:'UAB2302', note:'T3 Artillery',            pgenStep:10 },
   { name:'Hovatham',  faction:'Sera',   id:'XSB2302', note:'T3 Artillery',            pgenStep:10 },
   { name:'Mavor',     faction:'UEF',    id:'UEB2401', note:'Experimental Artillery',  pgenStep:10 },
-  { name:'Salvation', faction:'Aeon',   id:'XAB2307', note:'XP Rapid-Fire Artillery', pgenStep:5  },
+  { name:'Salvation', faction:'Aeon',   id:'XAB2307', note:'XP Rapid-Fire Artillery', pgenStep:4, t1pgenStep:0.5, maxReloadReduction:18 },
 ];
 
 const SHIELD_UNITS = [
@@ -359,6 +376,7 @@ let ARTYS = [];
 let SHIELDS = [];
 let activeArty = 0;
 let pgens = 0;
+let t1pgens = 0;
 let RAW_RESULTS = {};  // for debug panel
 
 // ═══════════════════════════════════════════════════════════════════
@@ -555,18 +573,49 @@ document.getElementById('pgenDots').addEventListener('click', function(e) {
   calc();
 });
 
+document.getElementById('t1pgenDots').addEventListener('click', function(e) {
+  var dot = e.target.closest('.pip');
+  if (!dot) return;
+  t1pgens = parseInt(dot.dataset.v);
+  refreshPgenUI();
+  calc();
+});
+
 function refreshPgenUI() {
   if (!ARTYS.length) return;
-  var step = ARTYS[activeArty].pgenStep;
+  var arty = ARTYS[activeArty];
+  var isSalvation = !!arty.t1pgenStep;
+  var step = arty.pgenStep;
+
   document.querySelectorAll('#pgenDots .pip').forEach(function(d) {
     d.classList.toggle('on', parseInt(d.dataset.v) <= pgens && pgens > 0);
   });
-  var totalPct = pgens * step;
-  document.getElementById('pgenSub').textContent =
-    pgens === 0 ? 'No reload bonus active' : ('-' + totalPct + '% reload time applied');
-  document.getElementById('pgenLabel').textContent = step === 5
-    ? 'Adjacency Bonus — -5% reload per PGEN, max 4 (max -20%)'
-    : 'T3 Power Generators — -10% reload each, max 4 (max -40%)';
+
+  // Show/hide T1 row
+  document.getElementById('t1pgenRow').style.display = isSalvation ? '' : 'none';
+
+  if (isSalvation) {
+    document.querySelectorAll('#t1pgenDots .pip').forEach(function(d) {
+      d.classList.toggle('on', parseInt(d.dataset.v) <= t1pgens && t1pgens > 0);
+    });
+    var t3pct  = pgens * step;
+    var t1pct  = t1pgens * arty.t1pgenStep;
+    var totalPct = Math.min(t3pct + t1pct, arty.maxReloadReduction);
+    document.getElementById('pgenLabel').textContent =
+      'T3 Power Generators — -' + step + '% reload each, max 4 (max -' + (4 * step) + '%)';
+    document.getElementById('t1pgenLabel').textContent =
+      'T1 Power Generators — -' + arty.t1pgenStep + '% reload each, max 4';
+    document.getElementById('pgenSub').textContent =
+      (pgens === 0 && t1pgens === 0)
+        ? 'No reload bonus active'
+        : '-' + totalPct.toFixed(1).replace('.0','') + '% reload time applied (T3: -' + t3pct + '%, T1: -' + t1pct + '%, cap: -' + arty.maxReloadReduction + '%)';
+  } else {
+    var totalPct = pgens * step;
+    document.getElementById('pgenSub').textContent =
+      pgens === 0 ? 'No reload bonus active' : ('-' + totalPct + '% reload time applied');
+    document.getElementById('pgenLabel').textContent =
+      'T3 Power Generators — -10% reload each, max 4 (max -40%)';
+  }
 }
 
 function r(v, d) { d = d === undefined ? 1 : d; return +v.toFixed(d); }
@@ -580,7 +629,10 @@ function calc() {
   var engiMass = parseFloat(document.getElementById('engiMass').value)  || 312;
   var arty     = ARTYS[activeArty];
 
-  var reloadReduction = pgens * arty.pgenStep / 100;
+  var t3reduction = pgens * arty.pgenStep / 100;
+  var t1reduction = arty.t1pgenStep ? t1pgens * arty.t1pgenStep / 100 : 0;
+  var maxReduction = arty.maxReloadReduction ? arty.maxReloadReduction / 100 : 1;
+  var reloadReduction = Math.min(t3reduction + t1reduction, maxReduction);
   var effectiveReload = arty.reload * (1 - reloadReduction);
   var totalDPS        = (count * arty.damage) / effectiveReload;
 
@@ -616,8 +668,8 @@ function calc() {
   });
   document.getElementById('tableBody').innerHTML = rows;
 
-  var stepNote = arty.pgenStep === 5
-    ? 'Salvation adjacency: -5% per PGEN, max 4 = max -20%'
+  var stepNote = arty.t1pgenStep
+    ? 'Salvation: -' + arty.pgenStep + '% per T3 PGEN (max 4 = -' + (4*arty.pgenStep) + '%) + -' + arty.t1pgenStep + '% per T1 PGEN (max 4 = -' + (4*arty.t1pgenStep) + '%) — total cap: -' + arty.maxReloadReduction + '%'
     : 'T3 PGEN: -10% per PGEN, max 4 = max -40%';
 
   document.getElementById('formulaBox').innerHTML =
@@ -632,7 +684,7 @@ function calc() {
     '<strong>3 - Heal output per engineer</strong>' +
     '<code>healPerEngi = BP × Regen/BP</code>' +
     '<strong>4 - Total DPS from artillery</strong>' +
-    '<code>TotalDPS = (Count × Damage) / (BaseReload × (1 − PGENs × ' + (arty.pgenStep / 100) + '))</code>' +
+    '<code>TotalDPS = (Count × Damage) / (BaseReload × (1 − min(T3PGENs×' + (arty.pgenStep/100) + (arty.t1pgenStep ? ' + T1PGENs×' + (arty.t1pgenStep/100) : '') + (arty.maxReloadReduction ? ', ' + (arty.maxReloadReduction/100) : '') + ')))</code>' +
     '<code>' + stepNote + '</code>' +
     '<strong>5 - Engineers needed</strong>' +
     '<code>engisNeeded = (TotalDPS − NativeRegen × regenFactor) / healPerEngi</code>' +
@@ -650,6 +702,7 @@ function buildTabs() {
     b.onclick = function() {
       activeArty = i;
       pgens = 0;
+      t1pgens = 0;
       buildTabs();
       refreshPgenUI();
       calc();
