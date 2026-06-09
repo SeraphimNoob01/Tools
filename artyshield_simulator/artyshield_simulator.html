@@ -375,6 +375,16 @@ function parseLua(lua) {
 let ARTYS = [];
 let SHIELDS = [];
 let activeArty = 0;
+
+// Measured Mass/s per 1 BP for each shield (averaged over T1/T2/T3 engineer).
+// Replaces the formula-derived massPerBP which pulls incorrect values from etfreeman-db.
+const MASS_PER_BP = {
+  UEB4301: 0.5005,  // HSD Pulse
+  XSB4301: 0.4729,  // Athanuhthe
+  URB4207: 0.4544,  // ED5
+  URB4206: 0.5324,  // ED4
+  UAB4301: 0.4453,  // Radiance
+};
 let pgens = 0;
 let t1pgens = 0;
 let RAW_RESULTS = {};  // for debug panel
@@ -648,7 +658,7 @@ function calc() {
     var regenFactor        = Math.max(0, (effectiveReload - sh.regenDelay) / effectiveReload);
     var effectiveShieldReg = sh.regenPerS * regenFactor;
     var healPerEngi        = engiBR * sh.regenPerBP;
-    var EMs                = engiBR * sh.regenPerBP / sh.massPerBP;
+    var EMs                = engiBR * (MASS_PER_BP[sh.id] ?? sh.massPerBP);
     var engisNeeded        = (totalDPS - effectiveShieldReg) / healPerEngi;
     var buildCost          = engisNeeded * engiMass;
     var totalCost          = engisNeeded * EMs;
