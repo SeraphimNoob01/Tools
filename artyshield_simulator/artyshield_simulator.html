@@ -620,6 +620,15 @@ function refreshPgenUI() {
   }
 }
 
+function bankersRound(x, decimals) {
+  var factor = Math.pow(10, decimals);
+  var shifted = x * factor;
+  var floor = Math.floor(shifted);
+  var diff = shifted - floor;
+  if (Math.abs(diff - 0.5) < 1e-10)
+    return (floor % 2 === 0 ? floor : floor + 1) / factor;
+  return Math.round(shifted) / factor;
+}
 function r(v, d) { d = d === undefined ? 1 : d; return +v.toFixed(d); }
 function fmt(v)  { return Math.round(v).toLocaleString(); }
 
@@ -635,7 +644,7 @@ function calc() {
   var t1reduction = arty.t1pgenStep ? t1pgens * arty.t1pgenStep / 100 : 0;
   var maxReduction = arty.maxReloadReduction ? arty.maxReloadReduction / 100 : 1;
   var reloadReduction = Math.min(t3reduction + t1reduction, maxReduction);
-  var effectiveReload = arty.reload * (1 - reloadReduction);
+  var effectiveReload = bankersRound(arty.reload * (1 - reloadReduction), 1);
   var totalDPS        = (count * arty.damage) / effectiveReload;
 
   document.getElementById('artyStatBar').innerHTML =
