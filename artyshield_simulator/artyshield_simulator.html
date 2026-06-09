@@ -249,11 +249,11 @@ const SHIELD_UNITS = [
 // ═══════════════════════════════════════════════════════════════════
 const HARDCODED = {
   // Shields — regenAssistMult: live from unit.bp where available; UEF (UEB4302) has no entry in unit.bp → hardcoded 60
-  UEB4301: { regenAssistMult:60,    maxHealth:17000, regenRate:131,  buildCostMass:2520, buildTime:3024 },
-  URB4206: { regenAssistMult:60.0,  maxHealth:13000, regenRate:130,  buildCostMass:2150, buildTime:2580 },
-  URB4207: { regenAssistMult:60.0,  maxHealth:20000, regenRate:140,  buildCostMass:4200, buildTime:6720 },
-  UAB4301: { regenAssistMult:60.0,  maxHealth:18000, regenRate:150,  buildCostMass:3150, buildTime:4032 },
-  XSB4301: { regenAssistMult:60.0,  maxHealth:21000, regenRate:168,  buildCostMass:3570, buildTime:4536 },
+  UEB4301: { regenAssistMult:60,    maxHealth:17000, regenRate:131,  buildCostMass:3300, buildTime:5000 },
+  URB4206: { regenAssistMult:60.0,  maxHealth:13000, regenRate:130,  buildCostMass:2460, buildTime:3515 },
+  URB4207: { regenAssistMult:60.0,  maxHealth:20000, regenRate:140,  buildCostMass:4260, buildTime:7100 },
+  UAB4301: { regenAssistMult:60.0,  maxHealth:18000, regenRate:150,  buildCostMass:2400, buildTime:4097 },
+  XSB4301: { regenAssistMult:60.0,  maxHealth:21000, regenRate:168,  buildCostMass:3600, buildTime:5800 },
   // Artys — fallback only, etfreeman-db is primary
   UEB2302: { damage:7840,  reload:13.3 },
   URB2302: { damage:3800,  reload:7.5  },
@@ -375,16 +375,6 @@ function parseLua(lua) {
 let ARTYS = [];
 let SHIELDS = [];
 let activeArty = 0;
-
-// Measured Mass/s per 1 BP for each shield (averaged over T1/T2/T3 engineer).
-// Replaces the formula-derived massPerBP which pulls incorrect values from etfreeman-db.
-const MASS_PER_BP = {
-  UEB4301: 0.5005,  // HSD Pulse
-  XSB4301: 0.4729,  // Athanuhthe
-  URB4207: 0.4544,  // ED5
-  URB4206: 0.5324,  // ED4
-  UAB4301: 0.4453,  // Radiance
-};
 let pgens = 0;
 let t1pgens = 0;
 let RAW_RESULTS = {};  // for debug panel
@@ -530,6 +520,8 @@ async function loadBlueprints() {
       regenPerS: regenRate,
       regenPerBP,
       massPerBP: regenPerBP / regenPerMass,
+      buildCostMass,
+      buildTime,
     };
   });
 
@@ -658,7 +650,7 @@ function calc() {
     var regenFactor        = Math.max(0, (effectiveReload - sh.regenDelay) / effectiveReload);
     var effectiveShieldReg = sh.regenPerS * regenFactor;
     var healPerEngi        = engiBR * sh.regenPerBP;
-    var EMs                = engiBR * (MASS_PER_BP[sh.id] ?? sh.massPerBP);
+    var EMs                = engiBR * (sh.buildCostMass / sh.buildTime) * 0.75;
     var engisNeeded        = (totalDPS - effectiveShieldReg) / healPerEngi;
     var buildCost          = engisNeeded * engiMass;
     var totalCost          = engisNeeded * EMs;
